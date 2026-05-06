@@ -162,7 +162,33 @@ export default function App() {
       );
 
       scanner.render((decodedText) => {
+        const text = decodedText.toUpperCase();
+        
+        // Auto-fill logic based on common patterns (like the label provided)
+        let product = '';
+        let isMedicinal = false;
+        let isIndustrial = false;
+
+        // Pattern matching for typical gas labels found in the region
+        if (text.includes('O2') || text.includes('MED') || text.includes('OXIGENO') || text.includes('C2GA')) {
+          product = 'OXÍGENO MEDICINAL';
+          isMedicinal = true;
+        } else if (text.includes('IND') || text.includes('ARGON') || text.includes('CO2') || text.includes('NITROGENO')) {
+          product = text.includes('ARGON') ? 'ARGÓN' : (text.includes('CO2') ? 'CO2 INDUSTRIAL' : 'GAS INDUSTRIAL');
+          isIndustrial = true;
+        }
+
         handleItemChange(activeScanner, 'serialNumber', decodedText);
+        if (product) handleItemChange(activeScanner, 'product', product);
+        if (isMedicinal) {
+          handleItemChange(activeScanner, 'isMedicinal', true);
+          handleItemChange(activeScanner, 'isIndustrial', false);
+        }
+        if (isIndustrial) {
+          handleItemChange(activeScanner, 'isIndustrial', true);
+          handleItemChange(activeScanner, 'isMedicinal', false);
+        }
+
         stopScanning();
       }, (error) => {
         // console.warn(error);

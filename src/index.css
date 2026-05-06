@@ -11,3 +11,24 @@
     @apply antialiased;
   }
 }
+
+/* Html5Qrcode Scanner Styling */
+#barcode-reader button {
+  @apply bg-[#1D1D1B] text-white px-4 py-2 rounded-sm text-xs font-bold uppercase tracking-wider mb-2 cursor-pointer hover:bg-[#333] transition-all;
+}
+
+#barcode-reader select {
+  @apply bg-white border border-gray-200 rounded-sm p-2 text-xs mb-4 outline-none focus:border-[#006BA6];
+}
+
+#barcode-reader__dashboard_section_csr button {
+  @apply bg-emerald-600 border-none px-6 text-sm py-3 transition-all hover:bg-emerald-700;
+}
+
+#barcode-reader__status_span {
+  @apply text-[10px] font-mono uppercase text-gray-500 mt-2 block;
+}
+
+#barcode-reader__scan_region video {
+  @apply rounded-lg overflow-hidden border-2 border-[#006BA6];
+}
