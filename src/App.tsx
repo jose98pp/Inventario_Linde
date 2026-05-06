@@ -71,11 +71,14 @@ export default function App() {
   });
 
   const [activeScanner, setActiveScanner] = useState<string | null>(null);
+  const [logo, setLogo] = useState<string | null>('https://companieslogo.com/img/orig/LIN.DE_BIG-5f05359b.png?t=1602410332');
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Persistence to local storage (optional but helpful for refresh)
   useEffect(() => {
     const saved = localStorage.getItem('cylinder_inventory_draft');
+    const savedLogo = localStorage.getItem('cylinder_inventory_logo');
     if (saved) {
       try {
         setRecord(JSON.parse(saved));
@@ -83,11 +86,27 @@ export default function App() {
         console.error("Failed to load saved draft", e);
       }
     }
+    if (savedLogo && savedLogo !== 'null') {
+      setLogo(savedLogo);
+    }
   }, []);
 
   useEffect(() => {
     localStorage.setItem('cylinder_inventory_draft', JSON.stringify(record));
-  }, [record]);
+    if (logo) localStorage.setItem('cylinder_inventory_logo', logo);
+  }, [record, logo]);
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
+        setLogo(base64);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleInputChange = (field: keyof InventoryRecord, value: string) => {
     setRecord(prev => ({ ...prev, [field]: value }));
@@ -159,80 +178,95 @@ export default function App() {
   }, [activeScanner]);
 
   const exportPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const lindeBlue = [0, 107, 166]; // RGB for Linde Blue
-    
-    // 1. Logo at Top Left
-    // Since we don't have the image asset, we'll draw a stylized representation or leave space
-    doc.setFillColor(lindeBlue[0], lindeBlue[1], lindeBlue[2]);
-    doc.rect(10, 10, 30, 10, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Linde', 15, 17);
+    const doc = new jsPDF({
+      format: 'a4',
+      unit: 'mm'
+    });
+    const lindeBlue = [0, 107, 166];
 
-    // 2. Center Title in Box
-    doc.setDrawColor(180);
-    doc.setLineWidth(0.3);
-    doc.rect(45, 10, 100, 10);
-    doc.setTextColor(lindeBlue[0], lindeBlue[1], lindeBlue[2]);
-    doc.setFontSize(14);
-    doc.text('INVENTARIO DE CILINDROS', 95, 17, { align: 'center' });
+    const drawHeader = (docInstance: jsPDF, pageNum: number) => {
+      const pageWidth = docInstance.internal.pageSize.getWidth();
+      
+      // Logo
+      if (logo) {
+        try {
+          docInstance.addImage(logo, 'PNG', 10, 8, 45, 18);
+        } catch (e) {
+          docInstance.setFillColor(lindeBlue[0], lindeBlue[1], lindeBlue[2]);
+          docInstance.rect(10, 10, 45, 10, 'F');
+          docInstance.setTextColor(255, 255, 255);
+          docInstance.setFontSize(8);
+          docInstance.text('LINDE', 32, 16, { align: 'center' });
+        }
+      } else {
+        docInstance.setFillColor(lindeBlue[0], lindeBlue[1], lindeBlue[2]);
+        docInstance.rect(10, 10, 45, 10, 'F');
+        docInstance.setTextColor(255, 255, 255);
+        docInstance.setFontSize(8);
+        docInstance.text('SUBIR LOGO', 32, 16, { align: 'center' });
+      }
 
-    // 3. Right Status Box
-    const rightBoxX = 150;
-    doc.setDrawColor(150);
-    doc.rect(rightBoxX, 10, 50, 24); // Container for right boxes
-    
-    doc.setTextColor(40);
-    doc.setFontSize(8);
-    // Grid inside right box
-    doc.line(rightBoxX, 18, 200, 18);
-    doc.line(rightBoxX, 26, 200, 26);
-    
-    doc.text('Total cilindros:', rightBoxX + 2, 15);
-    doc.text(record.items.length.toString(), rightBoxX + 35, 15);
-    
-    doc.text('Hora Inicio:', rightBoxX + 2, 23);
-    doc.text(record.timeStart, rightBoxX + 35, 23);
-    
-    doc.text('Hora Final:', rightBoxX + 2, 31);
-    doc.text(record.timeEnd || '', rightBoxX + 35, 31);
+      // Title Box
+      docInstance.setDrawColor(180);
+      docInstance.setLineWidth(0.3);
+      docInstance.rect(60, 10, 85, 10);
+      docInstance.setTextColor(lindeBlue[0], lindeBlue[1], lindeBlue[2]);
+      docInstance.setFontSize(12);
+      docInstance.setFont('helvetica', 'bold');
+      docInstance.text('INVENTARIO DE CILINDROS', 102.5, 17, { align: 'center' });
 
-    // 4. Main Info Grid (Matches the paper format)
-    const infoStartY = 40;
-    const infoHeight = 45;
-    doc.rect(10, infoStartY, 130, infoHeight);
-    
-    const rowHeight = infoHeight / 7;
-    for (let i = 1; i < 7; i++) {
-      doc.line(10, infoStartY + (i * rowHeight), 140, infoStartY + (i * rowHeight));
-    }
-    
-    const labelX = 12;
-    const valueX = 45;
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('Fecha Inventario:', labelX, infoStartY + rowHeight * 0.7);
-    doc.text('Sucursal:', labelX, infoStartY + rowHeight * 1.7);
-    doc.text('Código de cliente:', labelX, infoStartY + rowHeight * 2.7);
-    doc.text('Cliente:', labelX, infoStartY + rowHeight * 3.7);
-    doc.text('Domicilio:', labelX, infoStartY + rowHeight * 4.7);
-    doc.text('Inspector:', labelX, infoStartY + rowHeight * 5.7);
-    doc.text('Asesor Comercial:', labelX, infoStartY + rowHeight * 6.7);
-    
-    doc.setFont('helvetica', 'normal');
-    doc.text(record.date, valueX, infoStartY + rowHeight * 0.7);
-    doc.text(record.branch, valueX, infoStartY + rowHeight * 1.7);
-    doc.text(record.customerCode, valueX, infoStartY + rowHeight * 2.7);
-    doc.text(record.customerName, valueX, infoStartY + rowHeight * 3.7);
-    doc.text(record.address, valueX, infoStartY + rowHeight * 4.7);
-    doc.text(record.inspector, valueX, infoStartY + rowHeight * 5.7);
-    doc.text(record.advisor, valueX, infoStartY + rowHeight * 6.7);
+      // Right Status Box
+      const rightBoxX = 150;
+      docInstance.setDrawColor(150);
+      docInstance.rect(rightBoxX, 10, 50, 24);
+      docInstance.setTextColor(40);
+      docInstance.setFontSize(7);
+      docInstance.setFont('helvetica', 'normal');
+      docInstance.line(rightBoxX, 18, 200, 18);
+      docInstance.line(rightBoxX, 26, 200, 26);
+      
+      docInstance.text('Total cilindros:', rightBoxX + 2, 15);
+      docInstance.text(record.items.length.toString(), rightBoxX + 35, 15);
+      docInstance.text('Hora Inicio:', rightBoxX + 2, 23);
+      docInstance.text(record.timeStart, rightBoxX + 35, 23);
+      docInstance.text('Hora Final:', rightBoxX + 2, 31);
+      docInstance.text(record.timeEnd || 'En curso', rightBoxX + 35, 31);
 
-    // 5. Main Table
-    const tableData = record.items.map((item, index) => [
+      // Client Info Grid
+      const infoStartY = 40;
+      const infoHeight = 35;
+      docInstance.rect(10, infoStartY, 130, infoHeight);
+      const rowH = infoHeight / 7;
+      for (let i = 1; i < 7; i++) {
+        docInstance.line(10, infoStartY + (i * rowH), 140, infoStartY + (i * rowH));
+      }
+      
+      docInstance.setFont('helvetica', 'bold');
+      docInstance.text('Fecha Inventario:', 12, infoStartY + rowH * 0.7);
+      docInstance.text('Sucursal:', 12, infoStartY + rowH * 1.7);
+      docInstance.text('Código de cliente:', 12, infoStartY + rowH * 2.7);
+      docInstance.text('Cliente:', 12, infoStartY + rowH * 3.7);
+      docInstance.text('Domicilio:', 12, infoStartY + rowH * 4.7);
+      docInstance.text('Inspector:', 12, infoStartY + rowH * 5.7);
+      docInstance.text('Asesor Comercial:', 12, infoStartY + rowH * 6.7);
+      
+      docInstance.setFont('helvetica', 'normal');
+      const valX = 45;
+      docInstance.text(record.date, valX, infoStartY + rowH * 0.7);
+      docInstance.text(record.branch, valX, infoStartY + rowH * 1.7);
+      docInstance.text(record.customerCode, valX, infoStartY + rowH * 2.7);
+      docInstance.text(record.customerName, valX, infoStartY + rowH * 3.7);
+      docInstance.text(record.address, valX, infoStartY + rowH * 4.7);
+      docInstance.text(record.inspector, valX, infoStartY + rowH * 5.7);
+      docInstance.text(record.advisor, valX, infoStartY + rowH * 6.7);
+
+      docInstance.setFontSize(6);
+      docInstance.text(`Página ${pageNum}`, pageWidth - 20, docInstance.internal.pageSize.getHeight() - 10);
+    };
+
+    // Prepare table data chunks of 30 rows
+    const chunks: any[][] = [];
+    const fullItems = record.items.map((item, index) => [
       index + 1,
       item.product,
       item.serialNumber,
@@ -241,59 +275,83 @@ export default function App() {
       item.location
     ]);
 
-    // Fill to 30 rows if needed to match the paper exactly
-    while (tableData.length < 30) {
-      tableData.push(['', '', '', '', '', '']);
+    for (let i = 0; i < fullItems.length; i += 30) {
+      const chunk = fullItems.slice(i, i + 30);
+      // Pad with empty rows to always have 30
+      while (chunk.length < 30) {
+        chunk.push(['', '', '', '', '', '']);
+      }
+      chunks.push(chunk);
     }
 
-    autoTable(doc, {
-      startY: infoStartY + infoHeight + 5,
-      head: [['Nº', 'PRODUCTO', 'NÚMERO DE SERIE', 'MEDICINAL', 'INDUSTRIAL', 'UBICACIÓN']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { 
-        fillColor: [240, 240, 240], 
-        textColor: lindeBlue[0], 
-        fontSize: 7, 
-        fontStyle: 'bold',
-        halign: 'center'
-      },
-      styles: { 
-        fontSize: 7, 
-        cellPadding: 1, 
-        lineColor: [180, 180, 180], 
-        lineWidth: 0.1 
-      },
-      columnStyles: {
-        0: { halign: 'center', cellWidth: 7 },
-        1: { cellWidth: 50 },
-        2: { cellWidth: 50 },
-        3: { halign: 'center', cellWidth: 15 },
-        4: { halign: 'center', cellWidth: 15 },
-        5: { cellWidth: 50 },
-      },
-      margin: { left: 10, right: 10 }
+    // If no items, still show one empty page
+    if (chunks.length === 0) {
+      const emptyChunk = Array(30).fill(['', '', '', '', '', '']).map((r, i) => [i + 1, '', '', '', '', '']);
+      chunks.push(emptyChunk);
+    }
+
+    chunks.forEach((chunk, index) => {
+      if (index > 0) doc.addPage();
+      
+      const tableStartY = 78;
+      drawHeader(doc, index + 1);
+
+      autoTable(doc, {
+        startY: tableStartY,
+        head: [['Nº', 'PRODUCTO', 'NÚMERO DE SERIE', 'MED.', 'IND.', 'UBICACIÓN']],
+        body: chunk,
+        theme: 'grid',
+        headStyles: { 
+          fillColor: [240, 240, 240], 
+          textColor: lindeBlue[0], 
+          fontSize: 7, 
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        styles: { 
+          fontSize: 7, 
+          cellPadding: 0.8, 
+          lineColor: [180, 180, 180], 
+          lineWidth: 0.1,
+          minCellHeight: 5
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 7 },
+          1: { cellWidth: 48 },
+          2: { cellWidth: 50 },
+          3: { halign: 'center', cellWidth: 12, fontStyle: 'bold' },
+          4: { halign: 'center', cellWidth: 12, fontStyle: 'bold' },
+          5: { cellWidth: 48 },
+        },
+        margin: { top: 78, bottom: 45 }, // Increased bottom margin to fit signatures
+      });
+
+      // Render Signatures on EVERY page
+      const pageHeight = doc.internal.pageSize.getHeight();
+      renderSignatures(doc, pageHeight - 35);
     });
 
-    // 6. Signatures
-    const finalY = (doc as any).lastAutoTable.finalY + 15;
-    
-    doc.setDrawColor(100);
-    doc.line(10, finalY, 65, finalY);
-    doc.text('Asesor Comercial', 37.5, finalY + 5, { align: 'center' });
-    
-    doc.line(75, finalY, 130, finalY);
-    doc.text('Inspector de Cilindros', 102.5, finalY + 5, { align: 'center' });
+    function renderSignatures(docInstance: jsPDF, y: number) {
+      docInstance.setFontSize(7);
+      docInstance.setTextColor(40);
+      docInstance.setDrawColor(100);
+      docInstance.setLineWidth(0.2);
+      
+      docInstance.line(10, y + 15, 65, y + 15);
+      docInstance.text('Asesor Comercial', 37.5, y + 20, { align: 'center' });
+      
+      docInstance.line(75, y + 15, 130, y + 15);
+      docInstance.text('Inspector de Cilindros', 102.5, y + 20, { align: 'center' });
 
-    doc.line(140, finalY, 195, finalY);
-    doc.text('Cliente', 167.5, finalY + 5, { align: 'center' });
+      docInstance.line(140, y + 15, 195, y + 15);
+      docInstance.text('Cliente', 167.5, y + 20, { align: 'center' });
 
-    // Footer branding
-    doc.setFontSize(6);
-    doc.setTextColor(150);
-    doc.text('LINDE BOLIVIA S.R.L.', 10, doc.internal.pageSize.getHeight() - 5);
+      docInstance.setFontSize(6);
+      docInstance.setTextColor(150);
+      docInstance.text('LINDE BOLIVIA S.R.L.', 10, docInstance.internal.pageSize.getHeight() - 5);
+    }
 
-    doc.save(`Inventario_${record.customerName || 'SinNombre'}_${record.date}.pdf`);
+    doc.save(`Inventario_${record.customerName || 'Sin_Nombre'}_${record.date}.pdf`);
   };
 
   const clearInventory = () => {
@@ -314,38 +372,54 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#FDFCFB] text-[#1D1D1B] font-sans selection:bg-[#E2E8F0]">
       {/* Navbar */}
-      <nav className="sticky top-0 z-40 w-full bg-white/80 backdrop-blur-md border-bottom border-[#1D1D1B]/5 px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#1D1D1B] flex items-center justify-center rounded-sm">
-            <FileText className="text-white w-6 h-6" />
+      <nav className="sticky top-0 z-40 w-full bg-white/80 backdrop-blur-md border-b border-[#1D1D1B]/5 px-4 md:px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="relative group cursor-pointer flex-shrink-0" onClick={() => fileInputRef.current?.click()}>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              accept="image/*" 
+              onChange={handleLogoUpload}
+            />
+            {logo ? (
+              <img src={logo} alt="Logo" className="w-16 h-10 object-contain rounded-sm" />
+            ) : (
+              <div className="w-12 h-12 bg-[#006BA6] flex items-center justify-center rounded-sm group-hover:bg-[#005a8e] transition-all">
+                <FileText className="text-white w-7 h-7" />
+              </div>
+            )}
+            <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
+              <Plus size={10} />
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Inventario de Cilindros</h1>
-            <p className="text-[10px] uppercase tracking-widest opacity-50 font-medium">Relevamiento Digital</p>
+          <div className="overflow-hidden">
+            <h1 className="text-lg md:text-xl font-bold tracking-tight truncate">Cylinder Survey</h1>
+            <p className="text-[9px] md:text-[10px] uppercase tracking-widest opacity-50 font-medium">Relevamiento Digital</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
           <button 
             onClick={clearInventory}
-            className="p-2 hover:bg-red-50 text-red-500 rounded-full transition-colors"
+            className="p-2.5 hover:bg-red-50 text-red-500 rounded-full transition-colors flex-shrink-0"
             title="Borrar todo"
           >
             <Trash2 size={20} />
           </button>
           <button 
             onClick={finishSurvey}
-            className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-sm text-sm font-medium hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-900/10"
-            title="Marcar hora de finalización"
+            className="flex items-center justify-center gap-2 bg-emerald-600 text-white px-3 md:px-5 py-2.5 rounded-sm text-sm font-medium hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-900/10 flex-grow sm:flex-grow-0"
           >
-            <Clock size={18} />
-            <span>Finalizar</span>
+            <Clock size={16} />
+            <span className="hidden xs:inline">Finalizar</span>
           </button>
           <button 
             onClick={exportPDF}
-            className="flex items-center gap-2 bg-[#1D1D1B] text-white px-5 py-2.5 rounded-sm text-sm font-medium hover:bg-[#333] transition-all shadow-lg shadow-black/10"
+            className="flex items-center justify-center gap-2 bg-[#1D1D1B] text-white px-3 md:px-5 py-2.5 rounded-sm text-sm font-medium hover:bg-[#333] transition-all shadow-lg shadow-black/10 flex-grow sm:flex-grow-0"
           >
-            <Download size={18} />
-            <span>Exportar PDF</span>
+            <Download size={16} />
+            <span className="hidden xs:inline">PDF</span>
           </button>
         </div>
       </nav>
