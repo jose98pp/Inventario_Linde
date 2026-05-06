@@ -1,0 +1,8 @@
+{
+  "name": "Cylinder Survey Pro",
+  "description": "Professional tool for cylinder inventory survey with barcode scanning and PDF export.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
