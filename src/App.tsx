@@ -20,13 +20,16 @@ import {
   MapPin,
   Calendar as CalendarIcon,
   Search,
-  Check
+  Check,
+  GripHorizontal,
+  Filter,
+  ArrowUpDown
 } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { cn } from './lib/utils';
 
 // Types
@@ -72,8 +75,21 @@ export default function App() {
 
   const [activeScanner, setActiveScanner] = useState<string | null>(null);
   const [logo, setLogo] = useState<string | null>('https://companieslogo.com/img/orig/LIN.DE_BIG-5f05359b.png?t=1602410332');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [columnOrder, setColumnOrder] = useState(['n', 'product', 'serial', 'type', 'location']);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' | null }>({ key: '', direction: null });
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const LOCATION_OPTIONS = [
+    'Central', 
+    'Emergencia', 
+    'UCI', 
+    'Cirugía', 
+    'Quirófano', 
+    'Pediatría', 
+    'Hemodiálisis'
+  ];
 
   // Persistence to local storage (optional but helpful for refresh)
   useEffect(() => {
@@ -119,6 +135,17 @@ export default function App() {
     }));
   };
 
+  const setAllItemsType = (type: 'medicinal' | 'industrial') => {
+    setRecord(prev => ({
+      ...prev,
+      items: prev.items.map(item => ({
+        ...item,
+        isMedicinal: type === 'medicinal',
+        isIndustrial: type === 'industrial'
+      }))
+    }));
+  };
+
   const addItem = () => {
     setRecord(prev => ({
       ...prev,
@@ -139,6 +166,52 @@ export default function App() {
       ...prev,
       items: prev.items.filter(item => item.id !== id)
     }));
+  };
+
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' | null = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
+      direction = null;
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const reorderRows = (newItems: Cylinder[]) => {
+    setRecord(prev => ({ ...prev, items: newItems }));
+  };
+
+  const getSortedItems = () => {
+    let items = [...record.items];
+    
+    // Filter
+    items = items.filter(item => 
+      item.serialNumber.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      item.product.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.location.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    // Sort
+    if (sortConfig.direction && sortConfig.key) {
+      items.sort((a, b) => {
+        let valA: any, valB: any;
+        
+        switch (sortConfig.key) {
+          case 'product': valA = a.product; valB = b.product; break;
+          case 'serial': valA = a.serialNumber; valB = b.serialNumber; break;
+          case 'location': valA = a.location; valB = b.location; break;
+          case 'type': valA = a.isMedicinal ? 'M' : 'I'; valB = b.isMedicinal ? 'M' : 'I'; break;
+          default: valA = 0; valB = 0;
+        }
+
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return items;
   };
 
   const startScanning = (itemId: string) => {
@@ -550,126 +623,203 @@ export default function App() {
 
         {/* Dynamic Table Section */}
         <section className="bg-white border border-[#1D1D1B]/10 rounded-sm shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-[#1D1D1B]/10 flex justify-between items-center bg-[#FAFAFA]">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-[#1D1D1B]/5 flex items-center justify-center font-bold text-xs">
-                {record.items.length}
+          <div className="p-6 border-b border-[#1D1D1B]/10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#FAFAFA]">
+            <div className="flex items-center gap-4 w-full md:w-auto">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-[#1D1D1B]/5 flex items-center justify-center font-bold text-xs text-[#1D1D1B]">
+                  {record.items.length}
+                </div>
+                <h2 className="text-sm font-bold tracking-tight">Cilindros</h2>
               </div>
-              <h2 className="text-sm font-bold tracking-tight">Cilindros Relevados</h2>
+              
+              <div className="relative flex-grow md:flex-grow-0 group">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 opacity-30 group-focus-within:opacity-100 group-focus-within:text-[#006BA6] transition-all" />
+                <input 
+                  type="text"
+                  placeholder="Buscar serial, producto..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-full text-xs outline-none focus:border-[#006BA6] focus:ring-2 focus:ring-[#006BA6]/10 transition-all w-full md:w-56"
+                />
+                {searchQuery && (
+                  <button 
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 opacity-30 hover:opacity-100 p-1"
+                  >
+                    <X size={10} />
+                  </button>
+                )}
+              </div>
             </div>
-            <button 
-              onClick={addItem}
-              className="flex items-center gap-2 text-xs font-bold bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full border border-emerald-200 hover:bg-emerald-100 transition-all"
-            >
-              <Plus size={14} />
-              <span>Agregar Cilindro</span>
-            </button>
+
+            <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+              <button 
+                onClick={() => setAllItemsType('medicinal')}
+                className="whitespace-nowrap px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-100 hover:bg-blue-100 transition-all flex items-center gap-1.5"
+              >
+                <Check size={12} /> Todo Medicinal
+              </button>
+              <button 
+                onClick={() => setAllItemsType('industrial')}
+                className="whitespace-nowrap px-3 py-1.5 rounded-full bg-orange-50 text-orange-700 text-[10px] font-bold border border-orange-100 hover:bg-orange-100 transition-all flex items-center gap-1.5"
+              >
+                <Check size={12} /> Todo Industrial
+              </button>
+              <div className="w-px h-6 bg-gray-200 mx-1 hidden md:block"></div>
+              <button 
+                onClick={addItem}
+                className="whitespace-nowrap flex items-center gap-2 text-[10px] font-bold bg-[#1D1D1B] text-white px-4 py-2 rounded-full border border-black hover:bg-black transition-all ml-auto md:ml-0"
+              >
+                <Plus size={14} />
+                <span>Agregar</span>
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse min-w-[800px]">
               <thead className="bg-[#1D1D1B] text-white text-[10px] uppercase tracking-widest font-bold">
-                <tr>
-                  <th className="px-6 py-4 w-12">Nº</th>
-                  <th className="px-6 py-4 min-w-[180px]">Producto</th>
-                  <th className="px-6 py-4 min-w-[200px]">Número de Serie</th>
-                  <th className="px-6 py-4 text-center">Tipo</th>
-                  <th className="px-6 py-4">Ubicación</th>
-                  <th className="px-6 py-4 w-12"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1D1D1B]/5">
-                <AnimatePresence>
-                  {record.items.map((item, index) => (
-                    <motion.tr 
-                      key={item.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className="group hover:bg-[#F9F9F9] transition-colors"
-                    >
-                      <td className="px-6 py-4 text-xs font-mono opacity-50">{index + 1}</td>
-                      <td className="px-6 py-4">
-                        <input 
-                          type="text" 
-                          value={item.product}
-                          onChange={(e) => handleItemChange(item.id, 'product', e.target.value)}
-                          placeholder="Ej: Oxigeno Gas"
-                          className="w-full bg-transparent outline-none text-sm placeholder:opacity-30 border-b border-transparent focus:border-[#1D1D1B]/20 py-1"
-                        />
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="relative flex items-center">
-                          <input 
-                            type="text" 
-                            value={item.serialNumber}
-                            onChange={(e) => handleItemChange(item.id, 'serialNumber', e.target.value)}
-                            placeholder="Escanea o escribe..."
-                            className="w-full bg-transparent outline-none text-sm font-mono placeholder:opacity-30 border-b border-transparent focus:border-[#1D1D1B]/20 py-1 pr-10"
-                          />
+                <Reorder.Group axis="x" values={columnOrder} onReorder={setColumnOrder} as="tr">
+                  {columnOrder.map(col => (
+                    <Reorder.Item key={col} value={col} as="th" className="cursor-grab active:cursor-grabbing px-6 py-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <GripHorizontal size={12} className="opacity-30" />
+                          <span>
+                            {col === 'n' && 'Nº'}
+                            {col === 'product' && 'Producto'}
+                            {col === 'serial' && 'Número de Serie'}
+                            {col === 'type' && 'Tipo'}
+                            {col === 'location' && 'Ubicación'}
+                          </span>
+                        </div>
+                        {col !== 'n' && (
                           <button 
-                            onClick={() => startScanning(item.id)}
-                            className="absolute right-0 p-2 text-[#1D1D1B]/40 hover:text-[#1D1D1B] transition-colors"
-                            title="Escanear Código"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSort(col);
+                            }}
+                            className={cn(
+                              "p-1 hover:bg-white/10 rounded transition-colors",
+                              sortConfig.key === col ? "text-[#006BA6]" : "text-white/30"
+                            )}
                           >
-                            <Barcode size={18} />
+                            <ArrowUpDown size={12} />
                           </button>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex justify-center gap-4">
-                          <label className="flex items-center gap-2 cursor-pointer group/toggle">
-                            <div className="relative">
-                              <input 
-                                type="checkbox"
-                                checked={item.isMedicinal}
-                                onChange={(e) => {
-                                  handleItemChange(item.id, 'isMedicinal', e.target.checked);
-                                  if (e.target.checked) handleItemChange(item.id, 'isIndustrial', false);
-                                }}
-                                className="sr-only"
-                              />
-                              <div className={cn(
-                                "w-10 h-10 border-2 rounded-sm flex items-center justify-center transition-all",
-                                item.isMedicinal ? "bg-blue-600 border-blue-600 shadow-lg shadow-blue-200" : "border-[#1D1D1B]/10 hover:border-[#1D1D1B]/30"
-                              )}>
-                                {item.isMedicinal && <Check className="text-white" size={20} />}
-                                {!item.isMedicinal && <span className="text-[10px] font-bold opacity-30 group-hover/toggle:opacity-60">M</span>}
-                              </div>
+                        )}
+                      </div>
+                    </Reorder.Item>
+                  ))}
+                  <th className="px-6 py-4 w-12"></th>
+                </Reorder.Group>
+              </thead>
+              <Reorder.Group axis="y" values={record.items} onReorder={reorderRows} as="tbody" className="divide-y divide-[#1D1D1B]/5">
+                <AnimatePresence mode="popLayout">
+                  {getSortedItems().map((item, index) => (
+                    <Reorder.Item 
+                      key={item.id}
+                      value={item}
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.98 }}
+                      transition={{ duration: 0.2 }}
+                      as="tr"
+                      className="group hover:bg-[#F9F9F9] transition-colors relative"
+                    >
+                      {columnOrder.map(col => (
+                        <td key={col} className="px-6 py-4">
+                          {col === 'n' && (
+                            <div className="flex items-center gap-3">
+                              <GripHorizontal size={14} className="opacity-0 group-hover:opacity-20 cursor-ns-resize transition-all shrink-0" />
+                              <span className="text-xs font-mono opacity-50">{index + 1}</span>
                             </div>
-                          </label>
+                          )}
+                          {col === 'product' && (
+                            <input 
+                              type="text" 
+                              value={item.product}
+                              onChange={(e) => handleItemChange(item.id, 'product', e.target.value)}
+                              placeholder="Ej: Oxigeno Gas"
+                              className="w-full bg-transparent outline-none text-sm placeholder:opacity-30 border-b border-transparent focus:border-[#1D1D1B]/20 py-1"
+                            />
+                          )}
+                          {col === 'serial' && (
+                            <div className="relative flex items-center">
+                              <input 
+                                type="text" 
+                                value={item.serialNumber}
+                                onChange={(e) => handleItemChange(item.id, 'serialNumber', e.target.value)}
+                                placeholder="Escanea o escribe..."
+                                className="w-full bg-transparent outline-none text-sm font-mono placeholder:opacity-30 border-b border-transparent focus:border-[#1D1D1B]/20 py-1 pr-10"
+                              />
+                              <button 
+                                onClick={() => startScanning(item.id)}
+                                className="absolute right-0 p-2 text-[#1D1D1B]/40 hover:text-[#1D1D1B] transition-colors"
+                                title="Escanear Código"
+                              >
+                                <Barcode size={18} />
+                              </button>
+                            </div>
+                          )}
+                          {col === 'type' && (
+                            <div className="flex justify-center gap-4">
+                              <label className="flex items-center gap-2 cursor-pointer group/toggle">
+                                <div className="relative">
+                                  <input 
+                                    type="checkbox"
+                                    checked={item.isMedicinal}
+                                    onChange={(e) => {
+                                      handleItemChange(item.id, 'isMedicinal', e.target.checked);
+                                      if (e.target.checked) handleItemChange(item.id, 'isIndustrial', false);
+                                    }}
+                                    className="sr-only"
+                                  />
+                                  <div className={cn(
+                                    "w-10 h-10 border-2 rounded-sm flex items-center justify-center transition-all",
+                                    item.isMedicinal ? "bg-blue-600 border-blue-600 shadow-lg shadow-blue-200" : "border-[#1D1D1B]/10 hover:border-[#1D1D1B]/30"
+                                  )}>
+                                    {item.isMedicinal && <Check className="text-white" size={20} />}
+                                    {!item.isMedicinal && <span className="text-[10px] font-bold opacity-30 group-hover/toggle:opacity-60">M</span>}
+                                  </div>
+                                </div>
+                              </label>
 
-                          <label className="flex items-center gap-2 cursor-pointer group/toggle">
+                              <label className="flex items-center gap-2 cursor-pointer group/toggle">
+                                <div className="relative">
+                                  <input 
+                                    type="checkbox"
+                                    checked={item.isIndustrial}
+                                    onChange={(e) => {
+                                      handleItemChange(item.id, 'isIndustrial', e.target.checked);
+                                      if (e.target.checked) handleItemChange(item.id, 'isMedicinal', false);
+                                    }}
+                                    className="sr-only"
+                                  />
+                                  <div className={cn(
+                                    "w-10 h-10 border-2 rounded-sm flex items-center justify-center transition-all",
+                                    item.isIndustrial ? "bg-orange-600 border-orange-600 shadow-lg shadow-orange-200" : "border-[#1D1D1B]/10 hover:border-[#1D1D1B]/30"
+                                  )}>
+                                    {item.isIndustrial && <Check className="text-white" size={20} />}
+                                    {!item.isIndustrial && <span className="text-[10px] font-bold opacity-30 group-hover/toggle:opacity-60">I</span>}
+                                  </div>
+                                </div>
+                              </label>
+                            </div>
+                          )}
+                          {col === 'location' && (
                             <div className="relative">
                               <input 
-                                type="checkbox"
-                                checked={item.isIndustrial}
-                                onChange={(e) => {
-                                  handleItemChange(item.id, 'isIndustrial', e.target.checked);
-                                  if (e.target.checked) handleItemChange(item.id, 'isMedicinal', false);
-                                }}
-                                className="sr-only"
+                                type="text" 
+                                list="location-options"
+                                value={item.location}
+                                onChange={(e) => handleItemChange(item.id, 'location', e.target.value)}
+                                placeholder="Ubicación"
+                                className="w-full bg-transparent outline-none text-sm placeholder:opacity-30 border-b border-transparent focus:border-[#1D1D1B]/20 py-1"
                               />
-                              <div className={cn(
-                                "w-10 h-10 border-2 rounded-sm flex items-center justify-center transition-all",
-                                item.isIndustrial ? "bg-orange-600 border-orange-600 shadow-lg shadow-orange-200" : "border-[#1D1D1B]/10 hover:border-[#1D1D1B]/30"
-                              )}>
-                                {item.isIndustrial && <Check className="text-white" size={20} />}
-                                {!item.isIndustrial && <span className="text-[10px] font-bold opacity-30 group-hover/toggle:opacity-60">I</span>}
-                              </div>
                             </div>
-                          </label>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <input 
-                          type="text" 
-                          value={item.location}
-                          onChange={(e) => handleItemChange(item.id, 'location', e.target.value)}
-                          placeholder="Ubicación"
-                          className="w-full bg-transparent outline-none text-sm placeholder:opacity-30 border-b border-transparent focus:border-[#1D1D1B]/20 py-1"
-                        />
-                      </td>
+                          )}
+                        </td>
+                      ))}
                       <td className="px-6 py-4">
                         <button 
                           onClick={() => removeItem(item.id)}
@@ -681,12 +831,16 @@ export default function App() {
                           <X size={16} />
                         </button>
                       </td>
-                    </motion.tr>
+                    </Reorder.Item>
                   ))}
                 </AnimatePresence>
-              </tbody>
+              </Reorder.Group>
             </table>
           </div>
+
+          <datalist id="location-options">
+            {LOCATION_OPTIONS.map(opt => <option key={opt} value={opt} />)}
+          </datalist>
           
           <div className="p-8 bg-[#F9F9F9] flex justify-center">
              <button 
