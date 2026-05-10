@@ -9,6 +9,8 @@ import {
   Trash2, 
   Download, 
   Barcode, 
+  Camera,
+  Upload,
   X, 
   ChevronRight, 
   ChevronDown, 
@@ -31,6 +33,8 @@ import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { cn } from './lib/utils';
+
+import { extractCylinderInfo } from './services/geminiService';
 
 // Types
 interface Cylinder {
@@ -78,8 +82,12 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [columnOrder, setColumnOrder] = useState(['n', 'product', 'serial', 'type', 'location']);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' | null }>({ key: '', direction: null });
+  const [itemOrder, setItemOrder] = useState<string[]>(INITIAL_ITEMS.map(i => i.id));
+  const [loadingRow, setLoadingRow] = useState<string | null>(null);
+  const [activeGeminiRow, setActiveGeminiRow] = useState<string | null>(null);
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const geminiFileInputRef = useRef<HTMLInputElement>(null);
 
   const LOCATION_OPTIONS = [
     'Central', 
@@ -230,23 +238,40 @@ export default function App() {
     if (activeScanner) {
       const scanner = new Html5QrcodeScanner(
         "barcode-reader",
-        { fps: 10, qrbox: { width: 250, height: 150 } },
-        false
+        { 
+          fps: 15, 
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            return {
+              width: viewfinderWidth * 0.8,
+              height: viewfinderHeight * 0.4
+            };
+          },
+          aspectRatio: 1.0,
+          showTorchButtonIfSupported: true,
+          showZoomSliderIfSupported: true,
+        },
+        /* verbose= */ false
       );
 
       scanner.render((decodedText) => {
         const text = decodedText.toUpperCase();
         
-        // Auto-fill logic based on common patterns (like the label provided)
+        // Extended pattern matching for better auto-fill
         let product = '';
         let isMedicinal = false;
         let isIndustrial = false;
 
-        // Pattern matching for typical gas labels found in the region
-        if (text.includes('O2') || text.includes('MED') || text.includes('OXIGENO') || text.includes('C2GA')) {
+        // Specific patterns from the label image provided earlier
+        const isMedPattern = text.includes('O2') || text.includes('MED') || text.includes('OXIGENO') || 
+                            text.includes('C2GA') || text.includes('SSC10') || text.includes('GAM');
+        
+        const isIndPattern = text.includes('IND') || text.includes('ARGON') || text.includes('CO2') || 
+                            text.includes('NITROGENO') || text.includes('MIX') || text.includes('ATAL');
+
+        if (isMedPattern) {
           product = 'OXÍGENO MEDICINAL';
           isMedicinal = true;
-        } else if (text.includes('IND') || text.includes('ARGON') || text.includes('CO2') || text.includes('NITROGENO')) {
+        } else if (isIndPattern) {
           product = text.includes('ARGON') ? 'ARGÓN' : (text.includes('CO2') ? 'CO2 INDUSTRIAL' : 'GAS INDUSTRIAL');
           isIndustrial = true;
         }
@@ -256,8 +281,7 @@ export default function App() {
         if (isMedicinal) {
           handleItemChange(activeScanner, 'isMedicinal', true);
           handleItemChange(activeScanner, 'isIndustrial', false);
-        }
-        if (isIndustrial) {
+        } else if (isIndustrial) {
           handleItemChange(activeScanner, 'isIndustrial', true);
           handleItemChange(activeScanner, 'isMedicinal', false);
         }
@@ -275,6 +299,51 @@ export default function App() {
       }
     };
   }, [activeScanner]);
+
+  const handleGeminiTrigger = (rowId: string, directCamera = false) => {
+    setActiveGeminiRow(rowId);
+    if (geminiFileInputRef.current) {
+      if (directCamera) {
+        geminiFileInputRef.current.setAttribute('capture', 'environment');
+      } else {
+        geminiFileInputRef.current.removeAttribute('capture');
+      }
+      geminiFileInputRef.current.click();
+    }
+  };
+
+  const handleGeminiUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && activeGeminiRow) {
+      const rowId = activeGeminiRow;
+      setLoadingRow(rowId);
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64 = event.target?.result as string;
+        try {
+          const result = await extractCylinderInfo(base64);
+          if (result) {
+            if (result.serialNumber) handleItemChange(rowId, 'serialNumber', result.serialNumber);
+            if (result.product) handleItemChange(rowId, 'product', result.product);
+            if (result.type === 'medicinal') {
+              handleItemChange(rowId, 'isMedicinal', true);
+              handleItemChange(rowId, 'isIndustrial', false);
+            } else if (result.type === 'industrial') {
+              handleItemChange(rowId, 'isIndustrial', true);
+              handleItemChange(rowId, 'isMedicinal', false);
+            }
+          }
+        } catch (err) {
+          console.error("Gemini failed", err);
+        } finally {
+          setLoadingRow(null);
+          setActiveGeminiRow(null);
+          if (geminiFileInputRef.current) geminiFileInputRef.current.value = '';
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const exportPDF = () => {
     const doc = new jsPDF({
@@ -744,21 +813,43 @@ export default function App() {
                             />
                           )}
                           {col === 'serial' && (
-                            <div className="relative flex items-center">
+                            <div className="relative flex items-center gap-1">
                               <input 
                                 type="text" 
                                 value={item.serialNumber}
                                 onChange={(e) => handleItemChange(item.id, 'serialNumber', e.target.value)}
-                                placeholder="Escanea o escribe..."
-                                className="w-full bg-transparent outline-none text-sm font-mono placeholder:opacity-30 border-b border-transparent focus:border-[#1D1D1B]/20 py-1 pr-10"
+                                placeholder="Escribe o captura..."
+                                className={cn(
+                                  "w-full bg-transparent outline-none text-sm font-mono placeholder:opacity-30 border-b border-transparent focus:border-[#1D1D1B]/20 py-1 transition-all",
+                                  loadingRow === item.id ? "opacity-30 animate-pulse" : ""
+                                )}
                               />
-                              <button 
-                                onClick={() => startScanning(item.id)}
-                                className="absolute right-0 p-2 text-[#1D1D1B]/40 hover:text-[#1D1D1B] transition-colors"
-                                title="Escanear Código"
-                              >
-                                <Barcode size={18} />
-                              </button>
+                              <div className="flex items-center">
+                                <button 
+                                  onClick={() => handleGeminiTrigger(item.id, false)}
+                                  className="p-1.5 text-[#006BA6]/60 hover:text-[#006BA6] transition-all"
+                                  title="Subir de galería"
+                                  disabled={loadingRow !== null}
+                                >
+                                  <Upload size={16} />
+                                </button>
+                                <button 
+                                  onClick={() => handleGeminiTrigger(item.id, true)}
+                                  className="p-1.5 text-emerald-600/60 hover:text-emerald-600 transition-all"
+                                  title="Tomar Foto"
+                                  disabled={loadingRow !== null}
+                                >
+                                  <Camera size={16} />
+                                </button>
+                                <button 
+                                  onClick={() => startScanning(item.id)}
+                                  className="p-1.5 text-[#1D1D1B]/40 hover:text-[#1D1D1B] transition-all"
+                                  title="Escanear Código de Barras"
+                                  disabled={loadingRow !== null}
+                                >
+                                  <Barcode size={16} />
+                                </button>
+                              </div>
                             </div>
                           )}
                           {col === 'type' && (
@@ -877,6 +968,15 @@ export default function App() {
           </div>
         </section>
       </main>
+
+      {/* Hidden file input for Gemini Extraction */}
+      <input 
+        type="file"
+        ref={geminiFileInputRef}
+        className="hidden"
+        accept="image/*"
+        onChange={handleGeminiUpload}
+      />
 
       {/* Scanner Modal Overlay */}
       <AnimatePresence>
