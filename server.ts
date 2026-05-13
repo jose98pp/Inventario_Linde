@@ -43,23 +43,20 @@ async function startServer() {
       const mimeType = image.match(/^data:([^;]+);base64,/) ? image.match(/^data:([^;]+);base64,/)[1] : "image/jpeg";
 
       const response = await genAI.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                inlineData: {
-                  mimeType: mimeType,
-                  data: cleanBase64,
-                },
+        model: "gemini-3-flash-preview",
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: cleanBase64,
               },
-              {
-                text: "Extrae el número de serie (Serie, Lote), el producto y el tipo (medicinal o industrial) de esta etiqueta de cilindro de gas. Responde solo en JSON.",
-              },
-            ],
-          },
-        ],
+            },
+            {
+              text: "Extrae el número de serie (Serie, Lote), el producto y el tipo (medicinal o industrial) de esta etiqueta de cilindro de gas. Responde solo en JSON.",
+            },
+          ],
+        },
         config: {
           responseMimeType: "application/json",
           responseSchema: {
