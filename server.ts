@@ -43,7 +43,7 @@ async function startServer() {
       const mimeType = image.match(/^data:([^;]+);base64,/) ? image.match(/^data:([^;]+);base64,/)[1] : "image/jpeg";
 
       const response = await genAI.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-1.5-flash",
         contents: [
           {
             role: "user",
