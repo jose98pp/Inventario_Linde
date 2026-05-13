@@ -4,9 +4,21 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const genAI = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      "User-Agent": "aistudio-build",
+    },
+  },
+});
 
 async function startServer() {
   const app = express();
@@ -23,18 +35,15 @@ async function startServer() {
         return res.status(400).json({ error: "No image provided" });
       }
 
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        return res.status(500).json({ error: "GEMINI_API_KEY is not configured" });
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: "GEMINI_API_KEY is not configured in the Secrets panel" });
       }
 
-      const ai = new GoogleGenAI({ apiKey });
-      
       const cleanBase64 = image.includes(",") ? image.split(",")[1] : image;
       const mimeType = image.match(/^data:([^;]+);base64,/) ? image.match(/^data:([^;]+);base64,/)[1] : "image/jpeg";
 
-      const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+      const response = await genAI.models.generateContent({
+        model: "gemini-3-flash-preview",
         contents: [
           {
             role: "user",
